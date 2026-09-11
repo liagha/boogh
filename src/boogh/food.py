@@ -1,6 +1,5 @@
 """boogh food is SnappFood reads and orders."""
 import json
-import sys
 
 from boogh import config
 
@@ -89,7 +88,7 @@ class Food:
         if args.body_file:
             with open(args.body_file) as f:
                 return json.load(f)
-        sys.exit("error: write-body not yet pinned — pass --body-json/--body-file captured from one web order.")
+        raise ValueError("write-body not yet pinned — pass body_json/body_file captured from one web order.")
 
     def basket_create(self, args):
         return self.auth.guard(args, "food", "POST", f"{config.base}/mobile/v2/basket/",
