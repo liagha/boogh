@@ -1,4 +1,6 @@
 """boogh ride is Snapp taxi reads and writes."""
+import time
+
 from boogh import config
 
 
@@ -131,6 +133,51 @@ class Ride:
 
     def status(self, args):
         self.show("v2/passenger/ride", args)
+
+    def snapshot(self, data):
+        found = data.get("data", data) if isinstance(data, dict) else {}
+        active = found.get("ride") or found.get("started_ride")
+        if not active:
+            pending = found.get("need_rate") or {}
+            info = pending.get("ride_info") or {}
+            driver = pending.get("driver") or {}
+            return {"active": False,
+                    "unrated_ride": info.get("ride_id"),
+                    "unrated_driver": driver.get("driver_name")}
+        driver = active.get("driver") or {}
+        vehicle = active.get("vehicle") or driver.get("vehicle") or {}
+        origin = active.get("origin") or {}
+        dest = active.get("destination") or active.get("dest") or {}
+        return {"active": True,
+                "state": active.get("state") or active.get("status"),
+                "ride_id": active.get("human_readable_id") or active.get("ride_id") or active.get("id"),
+                "driver": driver.get("driver_name") or driver.get("name"),
+                "vehicle": vehicle.get("vehicle_model") or vehicle.get("model"),
+                "plate": vehicle.get("plate") or vehicle.get("number"),
+                "eta_min": active.get("eta") or (active.get("estimation") or {}).get("eta"),
+                "fare": (active.get("price") or {}).get("final") or active.get("final_price"),
+                "from": origin.get("formatted_address"),
+                "to": dest.get("formatted_address")}
+
+    def track(self, args):
+        wait = getattr(args, "follow", 0) or 0
+        limit = getattr(args, "timeout", 600) or 600
+        if not wait:
+            data = self.auth.call("ride", "GET", f"{config.proxy}/v2/passenger/ride", args.token)
+            self.net.emit(self.snapshot(data))
+            return
+        end = time.time() + limit
+        seen = None
+        while time.time() < end:
+            data = self.auth.call("ride", "GET", f"{config.proxy}/v2/passenger/ride", args.token)
+            snap = self.snapshot(data)
+            if snap != seen:
+                self.net.emit(snap)
+                seen = snap
+            if not snap["active"]:
+                return
+            time.sleep(wait)
+        self.net.emit({"active": None, "note": "track timed out, ride still active"})
 
     def rating(self, args):
         self.show("v1/passenger/rating", args)
