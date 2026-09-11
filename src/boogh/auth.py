@@ -64,13 +64,13 @@ class Auth:
             return found
         found = self.ride_refresh() if kind == "ride" else self.food_refresh()
         if not found:
-            sys.exit(f"error: no {kind} token and refresh failed. Login once (see --help).")
+            raise ValueError(f"no {kind} token and refresh failed. Login once (see --help).")
         return found
 
     def strict(self, kind, explicit):
         found = self.token(kind, explicit)
         if not found:
-            sys.exit(f"error: no {kind} token. Run login command or pass --token (see --help).")
+            raise ValueError(f"no {kind} token. Run login command or pass --token (see --help).")
         return found
 
     def ride_headers(self, referer="https://app.snapp.taxi/login"):
@@ -100,17 +100,12 @@ class Auth:
 
     def guard(self, args, kind, method, url, body=None, headers=None, note=""):
         if not getattr(args, "confirm", False):
-            self.net.emit({"dry_run": True, "method": method, "url": url,
-                           "body": body, "note": note or "re-run with --confirm to execute"})
-            return
+            return {"dry_run": True, "method": method, "url": url,
+                    "body": body, "note": note or "re-run with --confirm to execute"}
         if kind == "ride":
-            self.net.emit(self.call(kind, method, url, args.token, body=body, headers=headers))
-        elif method == "GET":
-            self.net.emit(self.net.call(method, url, body=body, headers=headers,
-                                        token=self.strict(kind, args.token)))
-        else:
-            self.net.emit(self.net.call(method, url, body=body, headers=headers,
-                                        token=self.strict(kind, args.token)))
+            return self.call(kind, method, url, args.token, body=body, headers=headers)
+        return self.net.call(method, url, body=body, headers=headers,
+                             token=self.strict(kind, args.token))
 
     def phone(self, text):
         clean = text.strip().replace(" ", "")
@@ -122,4 +117,4 @@ class Auth:
             return "+" + clean
         if clean.startswith("0") and len(clean) == 11:
             return "+98" + clean[1:]
-        sys.exit("error: phone must look like 0912xxxxxxx")
+        raise ValueError("phone must look like 0912xxxxxxx")

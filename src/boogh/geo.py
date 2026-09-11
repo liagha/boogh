@@ -17,11 +17,14 @@ class Geo:
                            {"place": text, "lat": lat, "lon": lon})
         items = (res[0].get("data") if isinstance(res, list) and res else []) or []
         if not items:
-            sys.exit(f"error: no place found for {text!r}")
+            raise ValueError(f"no place found for {text!r}")
         top = items[0]
         loc = top.get("location", {})
         return {"name": top.get("name"), "desc": top.get("description"),
                 "lat": float(loc.get("latitude")), "lng": float(loc.get("longitude"))}
+
+    def lookup(self, args):
+        return self.resolve(args.query)
 
     def saved(self, args=None, force=False):
         data = self.vault.load()
@@ -62,4 +65,4 @@ class Geo:
             return self.point(label, flat_v, flng_v)
         if flat_v is not None and flng_v is not None:
             return float(flat_v), float(flng_v)
-        sys.exit(f"error: give --{text} 'lat,lng' or text (or --{flat} + --{flng})")
+        raise ValueError(f"give --{text} 'lat,lng' or text (or --{flat} + --{flng})")

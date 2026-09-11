@@ -12,17 +12,10 @@ class Ride:
         self.geo = geo
 
     def show(self, path, args, tidy=None):
-        if path.startswith("api/"):
-            url = f"{config.proxy}/{path}"
-        elif path.startswith("v1/passenger/carpooling"):
-            url = f"{config.api}/{path}"
-        else:
-            url = f"{config.proxy}/{path}"
-        data = self.auth.call("ride", "GET", url, args.token)
+        data = self.auth.call("ride", "GET", f"{config.proxy}/{path}", args.token)
         if tidy and isinstance(data, dict):
-            self.net.emit(tidy(data.get("data", data)))
-        else:
-            self.net.emit(data)
+            return tidy(data.get("data", data))
+        return data
 
     def price(self, args):
         flat, flng = self.geo.coords(args, "from_lat", "from_lng", "origin")
@@ -33,92 +26,98 @@ class Ride:
         if args.voucher:
             body["voucher_code"] = args.voucher
         data = self.auth.call("ride", "POST", f"{config.api}/v3/price", args.token, body=body)
-        if getattr(args, "compact", False) and isinstance(data, dict):
-            rows = data.get("data", {})
-            self.net.emit([{"service": s.get("info", {}).get("name"),
-                            "final": (s.get("price") or {}).get("final"),
-                            "eta_min": ((s.get("estimation") or {}).get("eta") or [None])[0]}
-                           for s in (rows.get("services") or [])])
-        else:
-            self.net.emit(data)
+        if not getattr(args, "compact", False) or not isinstance(data, dict):
+            return data
+        rows = data.get("data", {})
+        return [{"service": s.get("info", {}).get("name"),
+                 "final": (s.get("price") or {}).get("final"),
+                 "eta_min": ((s.get("estimation") or {}).get("eta") or [None])[0]}
+                for s in (rows.get("services") or [])]
 
     def request(self, args):
         flat, flng = self.geo.coords(args, "from_lat", "from_lng", "origin")
         tlat, tlng = self.geo.coords(args, "to_lat", "to_lng", "dest")
-        self.auth.guard(args, "ride", "POST", f"{config.proxy}/v2/passenger/ride",
-                        {"origin_lat": flat, "origin_lng": flng,
-                         "destination_lat": tlat, "destination_lng": tlng,
-                         "service_type": args.service},
-                        headers={"x-app-version-code": "0"},
-                        note="REQUESTS A REAL RIDE - driver dispatched, fare charged!")
+        return self.auth.guard(args, "ride", "POST", f"{config.proxy}/v2/passenger/ride",
+                               {"origin_lat": flat, "origin_lng": flng,
+                                "destination_lat": tlat, "destination_lng": tlng,
+                                "service_type": args.service},
+                               headers={"x-app-version-code": "0"},
+                               note="REQUESTS A REAL RIDE - driver dispatched, fare charged!")
 
     def cancel(self, args):
-        self.auth.guard(args, "ride", "PATCH",
-                        f"{config.proxy}/v2/passenger/ride/{args.ride_id}/cancel/{args.state}",
-                        {"reason": args.reason} if args.reason else {},
-                        note="cancels a live ride (may affect rating)")
+        return self.auth.guard(args, "ride", "PATCH",
+                               f"{config.proxy}/v2/passenger/ride/{args.ride_id}/cancel/{args.state}",
+                               {"reason": args.reason} if args.reason else {},
+                               note="cancels a live ride (may affect rating)")
 
     def reasons(self, args):
-        self.show(f"v2/passenger/ride/{args.ride_id}/cancellation-reasons", args)
+        return self.show(f"v2/passenger/ride/{args.ride_id}/cancellation-reasons", args)
 
     def clone(self, args):
-        self.auth.guard(args, "ride", "POST",
-                        f"{config.proxy}/v1/passenger/ride/{args.ride_id}/clone",
-                        {"cancellation_reason_id": args.reason_id, "cancellation_description": ""},
-                        note="re-requests a cancelled ride")
+        return self.auth.guard(args, "ride", "POST",
+                               f"{config.proxy}/v1/passenger/ride/{args.ride_id}/clone",
+                               {"cancellation_reason_id": args.reason_id,
+                                "cancellation_description": ""},
+                               note="re-requests a cancelled ride")
 
     def block(self, args):
-        self.auth.guard(args, "ride", "POST",
-                        f"{config.proxy}/v1/passenger/ride/{args.ride_id}/block-driver", {},
-                        note="blocks driver from future matches")
+        return self.auth.guard(args, "ride", "POST",
+                               f"{config.proxy}/v1/passenger/ride/{args.ride_id}/block-driver",
+                               {}, note="blocks driver from future matches")
 
     def flexi(self, args):
-        self.auth.guard(args, "ride", "POST", f"{config.api}/v3/flexi",
-                        {"points": [{"lat": str(args.from_lat), "lng": str(args.from_lng)},
-                                    {"lat": str(args.to_lat), "lng": str(args.to_lng)}],
-                         "service_types": [args.service], "locale": "fa", "os": 6, "version": 0},
-                        note="flexi quote (preview)")
+        return self.auth.guard(args, "ride", "POST", f"{config.api}/v3/flexi",
+                               {"points": [{"lat": str(args.from_lat), "lng": str(args.from_lng)},
+                                            {"lat": str(args.to_lat), "lng": str(args.to_lng)}],
+                                "service_types": [args.service], "locale": "fa", "os": 6,
+                                "version": 0},
+                               note="flexi quote (preview)")
 
     def debt(self, args):
-        self.auth.guard(args, "ride", "POST", f"{config.proxy}/api/v1/passenger/pay-debt",
-                        {"wallet_type": args.wallet}, note="PAYS MONEY from wallet!")
+        return self.auth.guard(args, "ride", "POST",
+                               f"{config.proxy}/api/v1/passenger/pay-debt",
+                               {"wallet_type": args.wallet}, note="PAYS MONEY from wallet!")
 
     def voucher(self, args):
-        self.auth.guard(args, "ride", "PUT", f"{config.proxy}/v2/passenger/finance/voucher",
-                        {"voucher_code": args.code}, note="applies voucher")
+        return self.auth.guard(args, "ride", "PUT",
+                               f"{config.proxy}/v2/passenger/finance/voucher",
+                               {"voucher_code": args.code}, note="applies voucher")
 
     def profile_set(self, args):
-        self.auth.guard(args, "ride", "PUT", f"{config.proxy}/v2/passenger/profile",
-                        {"fullname": args.name, "meta": {
-                            "passenger_gender": args.gender, "passenger_birthdate": args.birthdate,
-                            "passenger_address": args.address}}, note="edits profile")
+        return self.auth.guard(args, "ride", "PUT", f"{config.proxy}/v2/passenger/profile",
+                               {"fullname": args.name, "meta": {
+                                   "passenger_gender": args.gender,
+                                   "passenger_birthdate": args.birthdate,
+                                   "passenger_address": args.address}},
+                               note="edits profile")
 
     def options_set(self, args):
-        self.auth.guard(args, "ride", "PUT", f"{config.proxy}/v2/passenger/options",
-                        {"disabilities": args.disabilities}, note="edits ride options")
+        return self.auth.guard(args, "ride", "PUT", f"{config.proxy}/v2/passenger/options",
+                               {"disabilities": args.disabilities},
+                               note="edits ride options")
 
     def options(self, args):
-        self.auth.guard(args, "ride", "POST", f"{config.proxy}/v1/ride-options",
-                        {"service_id": args.service,
-                         "points": [{"lat": str(args.from_lat), "lng": str(args.from_lng)},
-                                    {"lat": str(args.to_lat), "lng": str(args.to_lng)}]},
-                        note="ride-options quote (preview)")
+        return self.auth.guard(args, "ride", "POST", f"{config.proxy}/v1/ride-options",
+                               {"service_id": args.service,
+                                "points": [{"lat": str(args.from_lat), "lng": str(args.from_lng)},
+                                           {"lat": str(args.to_lat), "lng": str(args.to_lng)}]},
+                               note="ride-options quote (preview)")
 
     def carpool(self, args):
-        self.auth.guard(args, "ride", "POST",
-                        f"{config.api}/v1/passenger/carpooling/convert-offer/{args.act}/{args.offer_id}",
-                        {}, note=f"carpool offer {args.act}")
+        return self.auth.guard(args, "ride", "POST",
+                               f"{config.api}/v1/passenger/carpooling/convert-offer/{args.act}/{args.offer_id}",
+                               {}, note=f"carpool offer {args.act}")
 
     def boarded(self, args):
-        self.auth.guard(args, "ride", "POST",
-                        f"{config.api}/v2/passenger/{args.ride_id}/boarded",
-                        {"boarded": True}, note="confirms you boarded")
+        return self.auth.guard(args, "ride", "POST",
+                               f"{config.api}/v2/passenger/{args.ride_id}/boarded",
+                               {"boarded": True}, note="confirms you boarded")
 
     def headsup(self, args):
-        self.show(f"v3/passenger/ride/{args.ride_id}/cancellation-headsup", args)
+        return self.show(f"v3/passenger/ride/{args.ride_id}/cancellation-headsup", args)
 
     def profile(self, args):
-        self.show("v2/passenger/profile", args, lambda d: {
+        return self.show("v2/passenger/profile", args, lambda d: {
             "fullname": d.get("fullname"), "cellphone": d.get("cellphone"),
             "referral": d.get("referral_code"), "credit": d.get("credit"),
             "total_km": round((d.get("total_distance") or 0) / 1000, 1)})
@@ -129,10 +128,39 @@ class Ride:
                      "from": (r.get("origin") or {}).get("formatted_address"),
                      "to": (r.get("destination") or {}).get("formatted_address")}
                     for r in (d.get("rides") or [])[:(args.limit or 10)]]
-        self.show(f"v2/passenger/ride/history?page={args.page or 0}", args, tidy)
+        return self.show(f"v2/passenger/ride/history?page={args.page or 0}", args, tidy)
 
     def status(self, args):
-        self.show("v2/passenger/ride", args)
+        return self.show("v2/passenger/ride", args)
+
+    def rating(self, args):
+        return self.show("v1/passenger/rating", args)
+
+    def debts(self, args):
+        return self.show("api/v1/passenger/debts", args)
+
+    def wallets(self, args):
+        return self.show("api/v1/passengers/payments", args, lambda d: [
+            {"title": w.get("wallet_title"), "type": w.get("wallet_type")}
+            for w in (d.get("wallets") or [])])
+
+    def balance(self, args):
+        data = self.auth.call("ride", "POST", f"{config.proxy}/v2/passenger/balance",
+                              args.token, body={})
+        found = data.get("data", data) if isinstance(data, dict) else {}
+        return {"balance": found.get("balance"), "max_topup": found.get("max_topup_amount")}
+
+    def places(self, args):
+        return [{"name": p.get("name"), "addr": (p.get("location") or {}).get("formatted_address"),
+                 "lat": (p.get("location") or {}).get("lat"),
+                 "lng": (p.get("location") or {}).get("lng")}
+                for p in self.geo.saved(args, force=True)]
+
+    def place_add(self, args):
+        return self.auth.guard(args, "ride", "POST", f"{config.proxy}/v2/passenger/place",
+                               {"name": args.name, "detailed_address": args.address or "",
+                                "lat": args.lat, "lng": args.lng},
+                               note="saves a favorite place")
 
     def snapshot(self, data):
         found = data.get("data", data) if isinstance(data, dict) else {}
@@ -163,47 +191,21 @@ class Ride:
         wait = getattr(args, "follow", 0) or 0
         limit = getattr(args, "timeout", 600) or 600
         if not wait:
-            data = self.auth.call("ride", "GET", f"{config.proxy}/v2/passenger/ride", args.token)
-            self.net.emit(self.snapshot(data))
-            return
+            data = self.auth.call("ride", "GET", f"{config.proxy}/v2/passenger/ride",
+                                  args.token)
+            return self.snapshot(data)
         end = time.time() + limit
         seen = None
+        out = []
         while time.time() < end:
-            data = self.auth.call("ride", "GET", f"{config.proxy}/v2/passenger/ride", args.token)
+            data = self.auth.call("ride", "GET", f"{config.proxy}/v2/passenger/ride",
+                                  args.token)
             snap = self.snapshot(data)
             if snap != seen:
-                self.net.emit(snap)
+                out.append(snap)
                 seen = snap
             if not snap["active"]:
-                return
+                return out
             time.sleep(wait)
-        self.net.emit({"active": None, "note": "track timed out, ride still active"})
-
-    def rating(self, args):
-        self.show("v1/passenger/rating", args)
-
-    def debts(self, args):
-        self.show("api/v1/passenger/debts", args)
-
-    def wallets(self, args):
-        self.show("api/v1/passengers/payments", args, lambda d: [
-            {"title": w.get("wallet_title"), "type": w.get("wallet_type")}
-            for w in (d.get("wallets") or [])])
-
-    def balance(self, args):
-        data = self.auth.call("ride", "POST", f"{config.proxy}/v2/passenger/balance",
-                              args.token, body={})
-        found = data.get("data", data) if isinstance(data, dict) else {}
-        self.net.emit({"balance": found.get("balance"), "max_topup": found.get("max_topup_amount")})
-
-    def places(self, args):
-        self.net.emit([{"name": p.get("name"), "addr": (p.get("location") or {}).get("formatted_address"),
-                        "lat": (p.get("location") or {}).get("lat"),
-                        "lng": (p.get("location") or {}).get("lng")}
-                       for p in self.geo.saved(args, force=True)])
-
-    def place_add(self, args):
-        self.auth.guard(args, "ride", "POST", f"{config.proxy}/v2/passenger/place",
-                        {"name": args.name, "detailed_address": args.address or "",
-                         "lat": args.lat, "lng": args.lng},
-                        note="saves a favorite place")
+        out.append({"active": None, "note": "track timed out, ride still active"})
+        return out

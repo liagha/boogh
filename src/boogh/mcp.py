@@ -1,81 +1,59 @@
-"""boogh mcp is a stdio MCP server over the cli ops."""
-import contextlib
-import io
+"""boogh mcp is a stdio MCP server over the op registry."""
 import json
 import sys
-import types
 import urllib.error
 
-from boogh.cli import hub
+from boogh import ops
 
 VERSION = "2024-11-05"
 
-BASE = {"token": None, "confirm": False, "follow": 0, "timeout": 30,
-        "page": 0, "limit": 10, "compact": True, "supertype": None,
-        "code": None, "place": None, "lat": None, "long": None,
-        "from_lat": None, "from_lng": None, "to_lat": None, "to_lng": None,
-        "origin": None, "dest": None, "service": 1, "ride_id": None,
-        "state": "passenger", "reason": None, "voucher": None}
+TOOLS = [
+    ("ride_price", ("ride", "price")),
+    ("ride_track", ("ride", "track")),
+    ("ride_status", ("ride", "status")),
+    ("ride_history", ("ride", "history")),
+    ("ride_profile", ("ride", "profile")),
+    ("ride_places", ("ride", "place")),
+    ("ride_request", ("ride", "request")),
+    ("ride_cancel", ("ride", "cancel")),
+    ("food_vendors", ("food", "vendors")),
+    ("food_vendor", ("food", "vendor")),
+    ("food_menu", ("food", "menu")),
+    ("food_reviews", ("food", "reviews")),
+    ("food_area", ("food", "area")),
+    ("food_place", ("food", "place")),
+    ("food_reverse", ("food", "reverse")),
+    ("food_pending", ("food", "pending")),
+    ("geo", ("geo",)),
+]
 
 
-def tools(food, ride, geo):
-    return [
-        ("ride_price", "Fare quote between two points", ride.price,
-         {"origin": "saved place or address", "dest": "saved place or address"}),
-        ("ride_track", "Active ride snapshot", ride.track, {}),
-        ("ride_status", "Raw active-ride status", ride.status, {}),
-        ("ride_history", "Past rides", ride.history, {}),
-        ("ride_profile", "Passenger profile", ride.profile, {}),
-        ("ride_places", "Saved places", ride.places, {}),
-        ("ride_request", "REQUEST A REAL RIDE (confirm=true)", ride.request,
-         {"origin": "", "dest": "", "service": 1}),
-        ("ride_cancel", "Cancel a live ride (confirm=true)", ride.cancel,
-         {"ride_id": ""}),
-        ("food_vendors", "Nearby restaurants", food.vendors,
-         {"supertype": "e.g. restaurant"}),
-        ("food_vendor", "Vendor details", food.vendor, {"code": ""}),
-        ("food_menu", "Vendor menu", food.menu, {"code": ""}),
-        ("food_reviews", "Vendor reviews", food.reviews,
-         {"code": ""}),
-        ("food_area", "Marketing area for point", food.area, {}),
-        ("food_place", "Address search", food.place, {"place": ""}),
-        ("food_reverse", "Reverse geocode", food.reverse, {}),
-        ("food_pending", "Pending food orders (needs login)", food.pending, {}),
-        ("geo", "Resolve place to coords", None, {"query": ""}),
-    ]
+def entry(route):
+    return next(o for o in ops.OPS if o[0] == tuple(route))
 
 
-def schema(extra):
+def schema(fields):
     props = {"token": {"type": "string"}}
-    for key, hint in extra.items():
-        props[key] = {"type": ["string", "number"]}
-        if hint:
-            props[key]["description"] = str(hint)
+    for f in fields:
+        kind = {"str": "string", "int": "number", "float": "number",
+                "flag": "boolean", "noflag": "boolean"}.get(f["kind"], "string")
+        if f["kind"] == "pos":
+            props[f["name"]] = {"type": "string"}
+        else:
+            props[f["name"]] = {"type": kind}
     return {"type": "object", "properties": props}
 
 
-def run(fn, geo, args):
-    if fn is None:
-        return geo.resolve(args.query)
-    box = io.StringIO()
-    params = dict(BASE)
-    params.update({k: v for k, v in (args or {}).items() if v is not None})
+def run(core, route, args):
     try:
-        with contextlib.redirect_stdout(box):
-            fn(types.SimpleNamespace(**params))
-    except SystemExit as e:
-        return {"error": f"exit: {e.code}", "output": box.getvalue()}
+        return {"output": ops.run(core, route, args or {})}
+    except ValueError as e:
+        return {"error": str(e)}
     except urllib.error.HTTPError as e:
         return {"error": f"http {e.code}: {e.read().decode()[:500]}"}
-    texts = []
-    for chunk in box.getvalue().split("\n}\n"):
-        chunk = chunk.strip()
-        if chunk:
-            texts.append(chunk if chunk.endswith("}") else chunk + "}")
-    return {"output": texts}
 
 
-def handle(msg, table, geo):
+def handle(msg, core):
     mid = msg.get("id")
     method = msg.get("method", "")
     if method == "initialize":
@@ -88,24 +66,20 @@ def handle(msg, table, geo):
     if method == "tools/list":
         return {"jsonrpc": "2.0", "id": mid,
                 "result": {"tools": [
-                    {"name": n, "description": d, "inputSchema": schema(e)}
-                    for n, d, _, e in table]}}
+                    {"name": n, "description": entry(r)[3],
+                     "inputSchema": schema(entry(r)[4])}
+                    for n, r in TOOLS]}}
     if method == "tools/call":
         params = msg.get("params", {})
         name = params.get("name")
-        found = next((f for n, _, f, _ in table if n == name), None)
-        if found is None and name != "geo":
+        route = next((r for n, r in TOOLS if n == name), None)
+        if route is None:
             return {"jsonrpc": "2.0", "id": mid,
                     "result": {"content": [{"type": "text",
-                                            "text": json.dumps({"error": "unknown tool"}) }],
+                                            "text": json.dumps({"error": "unknown tool"})}],
                                "isError": True}}
-        if name == "geo" and (not params.get("arguments") or not params["arguments"].get("query")):
-            return {"jsonrpc": "2.0", "id": mid,
-                    "result": {"content": [{"type": "text",
-                                            "text": json.dumps({"error": "query required"}) }],
-                               "isError": True}}
-        out = run(found, geo, params.get("arguments", {}))
-        bad = isinstance(out, dict) and "error" in out
+        out = run(core, route, params.get("arguments", {}))
+        bad = "error" in out
         return {"jsonrpc": "2.0", "id": mid,
                 "result": {"content": [{"type": "text",
                                         "text": json.dumps(out, ensure_ascii=False)}],
@@ -117,14 +91,13 @@ def handle(msg, table, geo):
 
 
 def main():
-    food, ride, _, geo = hub()
-    table = tools(food, ride, geo)
+    core = ops.hub()
     for line in sys.stdin:
         line = line.strip()
         if not line:
             continue
         try:
-            res = handle(json.loads(line), table, geo)
+            res = handle(json.loads(line), core)
         except Exception as e:
             res = {"jsonrpc": "2.0", "id": None,
                    "error": {"code": -32603, "message": str(e)}}
