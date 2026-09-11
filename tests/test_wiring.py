@@ -64,16 +64,13 @@ class Wiring(unittest.TestCase):
                 self.assertTrue(box.getvalue().strip())
 
     def test_mcp_tools_match_ops(self):
-        routes = {o[0] for o in ops.OPS}
-        for name, route in mcp.TOOLS:
-            with self.subTest(tool=name):
-                self.assertIn(tuple(route), routes, f"{name} -> {route}")
+        self.assertEqual(set(mcp.TOOLS.values()), {o[0] for o in ops.OPS})
 
     def test_mcp_list(self):
         res = mcp.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
                          self.core)
         names = [t["name"] for t in res["result"]["tools"]]
-        self.assertEqual(names, [n for n, _ in mcp.TOOLS])
+        self.assertEqual(names, list(mcp.TOOLS))
         for tool in res["result"]["tools"]:
             self.assertIn("inputSchema", tool)
 

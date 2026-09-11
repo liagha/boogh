@@ -7,29 +7,19 @@ from boogh import ops
 
 VERSION = "2024-11-05"
 
-TOOLS = [
-    ("ride_price", ("ride", "price")),
-    ("ride_track", ("ride", "track")),
-    ("ride_status", ("ride", "status")),
-    ("ride_history", ("ride", "history")),
-    ("ride_profile", ("ride", "profile")),
-    ("ride_places", ("ride", "place")),
-    ("ride_request", ("ride", "request")),
-    ("ride_cancel", ("ride", "cancel")),
-    ("food_vendors", ("food", "vendors")),
-    ("food_vendor", ("food", "vendor")),
-    ("food_menu", ("food", "menu")),
-    ("food_reviews", ("food", "reviews")),
-    ("food_area", ("food", "area")),
-    ("food_place", ("food", "place")),
-    ("food_reverse", ("food", "reverse")),
-    ("food_pending", ("food", "pending")),
-    ("geo", ("geo",)),
-]
+TOOLS = {"_".join(route): route for route, *_ in ops.OPS}
+
+NOISY = {(("food", "login", "send"), " (sends a real SMS)"),
+         (("ride", "login", "send"), " (sends a real SMS/call)")}
 
 
 def entry(route):
     return next(o for o in ops.OPS if o[0] == tuple(route))
+
+
+def desc(route):
+    found = next(o for o in ops.OPS if o[0] == tuple(route))
+    return found[3] + dict(NOISY).get(tuple(route), "")
 
 
 def schema(fields):
@@ -66,19 +56,18 @@ def handle(msg, core):
     if method == "tools/list":
         return {"jsonrpc": "2.0", "id": mid,
                 "result": {"tools": [
-                    {"name": n, "description": entry(r)[3],
+                    {"name": n, "description": desc(r),
                      "inputSchema": schema(entry(r)[4])}
-                    for n, r in TOOLS]}}
+                    for n, r in TOOLS.items()]}}
     if method == "tools/call":
         params = msg.get("params", {})
         name = params.get("name")
-        route = next((r for n, r in TOOLS if n == name), None)
-        if route is None:
+        if name not in TOOLS:
             return {"jsonrpc": "2.0", "id": mid,
                     "result": {"content": [{"type": "text",
                                             "text": json.dumps({"error": "unknown tool"})}],
                                "isError": True}}
-        out = run(core, route, params.get("arguments", {}))
+        out = run(core, TOOLS[name], params.get("arguments", {}))
         bad = "error" in out
         return {"jsonrpc": "2.0", "id": mid,
                 "result": {"content": [{"type": "text",

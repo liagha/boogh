@@ -8,10 +8,10 @@ writes to `~/.config/boogh/tokens.json`.
 ```bash
 uv sync
 uv run boogh food cities
-uv run boogh food vendors --compact
+uv run boogh food vendors
 uv run boogh food menu 3kv8mn
 uv run boogh geo "میدان ونک"
-uv run boogh ride price --origin "میدان ونک" --dest "تجریش" --compact
+uv run boogh ride price --origin "میدان ونک" --dest "تجریش"
 uv run boogh ride profile
 uv run boogh ride place
 uv run boogh ride history --limit 5
@@ -30,8 +30,6 @@ uv run boogh-mcp
 ```
 
 Point any MCP client at it (command `uv`, args `["run", "--project", "/path/to/boogh", "boogh-mcp"]`).
-17 tools: `ride_price`, `ride_track`, `ride_status`, `ride_history`,
-`ride_profile`, `ride_places`, `ride_request`, `ride_cancel`,
-`food_vendors`, `food_vendor`, `food_menu`, `food_reviews`,
-`food_area`, `food_place`, `food_reverse`, `food_pending`, `geo`.
+Every op is a tool (`food_vendors`, `ride_price`, `ride_login_send`, ...),
+generated from the same registry, so CLI and MCP never drift.
 Writes need `"confirm": true` in args, otherwise they return dry-run.
