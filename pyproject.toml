@@ -7,6 +7,7 @@ requires-python = ">=3.11"
 
 [project.scripts]
 boogh = "boogh.cli:main"
+boogh-mcp = "boogh.mcp:main"
 
 [build-system]
 requires = ["hatchling"]
