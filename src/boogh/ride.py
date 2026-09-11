@@ -1,0 +1,162 @@
+"""boogh ride is Snapp taxi reads and writes."""
+from boogh import config
+
+
+class Ride:
+    def __init__(self, vault, net, auth, geo):
+        self.vault = vault
+        self.net = net
+        self.auth = auth
+        self.geo = geo
+
+    def show(self, path, args, tidy=None):
+        if path.startswith("api/"):
+            url = f"{config.proxy}/{path}"
+        elif path.startswith("v1/passenger/carpooling"):
+            url = f"{config.api}/{path}"
+        else:
+            url = f"{config.proxy}/{path}"
+        data = self.auth.call("ride", "GET", url, args.token)
+        if tidy and isinstance(data, dict):
+            self.net.emit(tidy(data.get("data", data)))
+        else:
+            self.net.emit(data)
+
+    def price(self, args):
+        flat, flng = self.geo.coords(args, "from_lat", "from_lng", "origin")
+        tlat, tlng = self.geo.coords(args, "to_lat", "to_lng", "dest")
+        body = {"points": [{"lat": str(flat), "lng": str(flng)},
+                           {"lat": str(tlat), "lng": str(tlng)}],
+                "locale": "fa", "os": 6, "version": 0}
+        if args.voucher:
+            body["voucher_code"] = args.voucher
+        data = self.auth.call("ride", "POST", f"{config.api}/v3/price", args.token, body=body)
+        if getattr(args, "compact", False) and isinstance(data, dict):
+            rows = data.get("data", {})
+            self.net.emit([{"service": s.get("info", {}).get("name"),
+                            "final": (s.get("price") or {}).get("final"),
+                            "eta_min": ((s.get("estimation") or {}).get("eta") or [None])[0]}
+                           for s in (rows.get("services") or [])])
+        else:
+            self.net.emit(data)
+
+    def request(self, args):
+        flat, flng = self.geo.coords(args, "from_lat", "from_lng", "origin")
+        tlat, tlng = self.geo.coords(args, "to_lat", "to_lng", "dest")
+        self.auth.guard(args, "ride", "POST", f"{config.proxy}/v2/passenger/ride",
+                        {"origin_lat": flat, "origin_lng": flng,
+                         "destination_lat": tlat, "destination_lng": tlng,
+                         "service_type": args.service},
+                        headers={"x-app-version-code": "0"},
+                        note="REQUESTS A REAL RIDE - driver dispatched, fare charged!")
+
+    def cancel(self, args):
+        self.auth.guard(args, "ride", "PATCH",
+                        f"{config.proxy}/v2/passenger/ride/{args.ride_id}/cancel/{args.state}",
+                        {"reason": args.reason} if args.reason else {},
+                        note="cancels a live ride (may affect rating)")
+
+    def reasons(self, args):
+        self.show(f"v2/passenger/ride/{args.ride_id}/cancellation-reasons", args)
+
+    def clone(self, args):
+        self.auth.guard(args, "ride", "POST",
+                        f"{config.proxy}/v1/passenger/ride/{args.ride_id}/clone",
+                        {"cancellation_reason_id": args.reason_id, "cancellation_description": ""},
+                        note="re-requests a cancelled ride")
+
+    def block(self, args):
+        self.auth.guard(args, "ride", "POST",
+                        f"{config.proxy}/v1/passenger/ride/{args.ride_id}/block-driver", {},
+                        note="blocks driver from future matches")
+
+    def flexi(self, args):
+        self.auth.guard(args, "ride", "POST", f"{config.api}/v3/flexi",
+                        {"points": [{"lat": str(args.from_lat), "lng": str(args.from_lng)},
+                                    {"lat": str(args.to_lat), "lng": str(args.to_lng)}],
+                         "service_types": [args.service], "locale": "fa", "os": 6, "version": 0},
+                        note="flexi quote (preview)")
+
+    def debt(self, args):
+        self.auth.guard(args, "ride", "POST", f"{config.proxy}/api/v1/passenger/pay-debt",
+                        {"wallet_type": args.wallet}, note="PAYS MONEY from wallet!")
+
+    def voucher(self, args):
+        self.auth.guard(args, "ride", "PUT", f"{config.proxy}/v2/passenger/finance/voucher",
+                        {"voucher_code": args.code}, note="applies voucher")
+
+    def profile_set(self, args):
+        self.auth.guard(args, "ride", "PUT", f"{config.proxy}/v2/passenger/profile",
+                        {"fullname": args.name, "meta": {
+                            "passenger_gender": args.gender, "passenger_birthdate": args.birthdate,
+                            "passenger_address": args.address}}, note="edits profile")
+
+    def options_set(self, args):
+        self.auth.guard(args, "ride", "PUT", f"{config.proxy}/v2/passenger/options",
+                        {"disabilities": args.disabilities}, note="edits ride options")
+
+    def options(self, args):
+        self.auth.guard(args, "ride", "POST", f"{config.proxy}/v1/ride-options",
+                        {"service_id": args.service,
+                         "points": [{"lat": str(args.from_lat), "lng": str(args.from_lng)},
+                                    {"lat": str(args.to_lat), "lng": str(args.to_lng)}]},
+                        note="ride-options quote (preview)")
+
+    def carpool(self, args):
+        self.auth.guard(args, "ride", "POST",
+                        f"{config.api}/v1/passenger/carpooling/convert-offer/{args.act}/{args.offer_id}",
+                        {}, note=f"carpool offer {args.act}")
+
+    def boarded(self, args):
+        self.auth.guard(args, "ride", "POST",
+                        f"{config.api}/v2/passenger/{args.ride_id}/boarded",
+                        {"boarded": True}, note="confirms you boarded")
+
+    def headsup(self, args):
+        self.show(f"v3/passenger/ride/{args.ride_id}/cancellation-headsup", args)
+
+    def profile(self, args):
+        self.show("v2/passenger/profile", args, lambda d: {
+            "fullname": d.get("fullname"), "cellphone": d.get("cellphone"),
+            "referral": d.get("referral_code"), "credit": d.get("credit"),
+            "total_km": round((d.get("total_distance") or 0) / 1000, 1)})
+
+    def history(self, args):
+        def tidy(d):
+            return [{"id": r.get("human_readable_id"), "title": r.get("title"),
+                     "from": (r.get("origin") or {}).get("formatted_address"),
+                     "to": (r.get("destination") or {}).get("formatted_address")}
+                    for r in (d.get("rides") or [])[:(args.limit or 10)]]
+        self.show(f"v2/passenger/ride/history?page={args.page or 0}", args, tidy)
+
+    def status(self, args):
+        self.show("v2/passenger/ride", args)
+
+    def rating(self, args):
+        self.show("v1/passenger/rating", args)
+
+    def debts(self, args):
+        self.show("api/v1/passenger/debts", args)
+
+    def wallets(self, args):
+        self.show("api/v1/passengers/payments", args, lambda d: [
+            {"title": w.get("wallet_title"), "type": w.get("wallet_type")}
+            for w in (d.get("wallets") or [])])
+
+    def balance(self, args):
+        data = self.auth.call("ride", "POST", f"{config.proxy}/v2/passenger/balance",
+                              args.token, body={})
+        found = data.get("data", data) if isinstance(data, dict) else {}
+        self.net.emit({"balance": found.get("balance"), "max_topup": found.get("max_topup_amount")})
+
+    def places(self, args):
+        self.net.emit([{"name": p.get("name"), "addr": (p.get("location") or {}).get("formatted_address"),
+                        "lat": (p.get("location") or {}).get("lat"),
+                        "lng": (p.get("location") or {}).get("lng")}
+                       for p in self.geo.saved(args, force=True)])
+
+    def place_add(self, args):
+        self.auth.guard(args, "ride", "POST", f"{config.proxy}/v2/passenger/place",
+                        {"name": args.name, "detailed_address": args.address or "",
+                         "lat": args.lat, "lng": args.lng},
+                        note="saves a favorite place")
