@@ -41,6 +41,8 @@ def run(core, route, args):
         return {"error": str(e)}
     except urllib.error.HTTPError as e:
         return {"error": f"http {e.code}: {e.read().decode()[:500]}"}
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
 
 
 def handle(msg, core):

@@ -170,6 +170,8 @@ def run(core, route, values):
             box[key] = getattr(values, key, spec_default(f))
     if "token" not in box:
         box["token"] = None
+    if len(found[0]) == 3 and "act" not in box:
+        box["act"] = found[0][2]
     return getattr(core[target], method)(types.SimpleNamespace(**box))
 
 

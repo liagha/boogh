@@ -90,6 +90,20 @@ class Wiring(unittest.TestCase):
                          self.core)
         self.assertTrue(res["result"]["isError"])
 
+    def test_mcp_three_part_routes(self):
+        for name, act in (("ride_carpool_accept", "accept"),
+                          ("ride_carpool_reject", "reject"),
+                          ("ride_carpool_dismiss", "dismiss")):
+            with self.subTest(tool=name):
+                res = mcp.handle({"jsonrpc": "2.0", "id": 4, "method": "tools/call",
+                                  "params": {"name": name, "arguments": {
+                                      "offer_id": "00000000-0000-0000-0000-000000000000"}}},
+                                 self.core)
+                body = json.loads(res["result"]["content"][0]["text"])
+                self.assertFalse(res["result"]["isError"])
+                self.assertTrue(body["output"]["dry_run"])
+                self.assertIn(f"/{act}/", body["output"]["url"])
+
     def test_ops_run_unknown(self):
         with self.assertRaises(ValueError):
             ops.run(self.core, ("ride", "nope"), {})
