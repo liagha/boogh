@@ -20,3 +20,22 @@ uv run boogh ride history --limit 5
 Reads default to home location, no flags needed.
 `--origin`/`--dest` take `lat,lng`, a saved name (`Home`, `دفتر`), or Persian text.
 Writes never fire without `--confirm`. Default prints dry-run.
+
+## MCP
+
+Stdio server, same ops, no extra deps:
+
+```bash
+uv run boogh-mcp
+```
+
+Point any MCP client at it (command `uv`, args `["run", "--project", "/path/to/boogh", "boogh-mcp"]`).
+17 tools: `ride_price`, `ride_track`, `ride_status`, `ride_history`,
+`ride_profile`, `ride_places`, `ride_request`, `ride_cancel`,
+`food_vendors`, `food_vendor`, `food_menu`, `food_reviews`,
+`food_area`, `food_place`, `food_reverse`, `food_pending`, `geo`.
+Writes need `"confirm": true` in args, otherwise they return dry-run.
+
+Pickup odds: no endpoint exposes nearby cars. Per-service ETA in
+`ride price --compact` (`eta_min`) is the supply signal. After
+requesting, `ride track --follow 15` watches acceptance live.
