@@ -165,13 +165,15 @@ class Login:
 
     def ride_guided(self, args):
         import subprocess
-        helper = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                              "..", "..", "..", "snapppp", "login-helper", "ride_login.py")
-        legacy = os.path.expanduser("~/Projects/snapppp/login-helper/ride_login.py")
-        path = legacy if os.path.exists(legacy) else helper
-        venv = os.path.expanduser("~/Projects/snapppp/login-helper/.venv/bin/python")
-        cmd = venv if os.path.exists(venv) else sys.executable
-        done = subprocess.run([cmd, path, "--timeout", str(args.timeout)],
+        helper = getattr(args, "helper", None) or os.environ.get("BOOGH_LOGIN_HELPER")
+        if not helper or not os.path.exists(helper):
+            raise ValueError(
+                "guided login needs a helper script (--helper or BOOGH_LOGIN_HELPER): "
+                "any executable taking --timeout N that opens the Snapp login page, "
+                "lets you log in, then prints "
+                "'{\"accessToken\": ..., \"refreshToken\": ..., \"deviceId\": ...}' "
+                "as the last line of stdout. Needs selenium + Firefox on PATH.")
+        done = subprocess.run([sys.executable, helper, "--timeout", str(args.timeout)],
                               capture_output=True, text=True)
         if done.returncode != 0:
             raise ValueError(f"guided login failed/timed out: {(done.stdout or '') + (done.stderr or '')}"[:500])
