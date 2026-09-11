@@ -18,8 +18,8 @@ captcha_client = "71C84A80-395B-448E-A240-B7DC939186D3"
 
 food_client = "PWA"
 food_version = "6.0.0"
-home_lat = 35.774
-home_long = 51.418
+home_lat = float(os.environ.get("BOOGH_LAT", 35.721))
+home_long = float(os.environ.get("BOOGH_LONG", 51.334))
 
 agent = {"User-Agent": "boogh/0.1", "Accept-Language": "fa"}
 ride_headers = {"App-Version": "pwa", "x-app-version": ride_version,

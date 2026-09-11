@@ -167,9 +167,9 @@ class Login:
         import subprocess
         helper = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                               "..", "..", "..", "snapppp", "login-helper", "ride_login.py")
-        legacy = "/home/alee/Projects/snapppp/login-helper/ride_login.py"
+        legacy = os.path.expanduser("~/Projects/snapppp/login-helper/ride_login.py")
         path = legacy if os.path.exists(legacy) else helper
-        venv = "/home/alee/Projects/snapppp/login-helper/.venv/bin/python"
+        venv = os.path.expanduser("~/Projects/snapppp/login-helper/.venv/bin/python")
         cmd = venv if os.path.exists(venv) else sys.executable
         done = subprocess.run([cmd, path, "--timeout", str(args.timeout)],
                               capture_output=True, text=True)
