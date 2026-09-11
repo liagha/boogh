@@ -35,7 +35,3 @@ Point any MCP client at it (command `uv`, args `["run", "--project", "/path/to/b
 `food_vendors`, `food_vendor`, `food_menu`, `food_reviews`,
 `food_area`, `food_place`, `food_reverse`, `food_pending`, `geo`.
 Writes need `"confirm": true` in args, otherwise they return dry-run.
-
-Pickup odds: no endpoint exposes nearby cars. Per-service ETA in
-`ride price --compact` (`eta_min`) is the supply signal. After
-requesting, `ride track --follow 15` watches acceptance live.
